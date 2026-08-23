@@ -1,0 +1,161 @@
+// WEB SHELF data model
+// Sites are registered web sources; ContentItems are normalized articles/images/etc
+// fetched from those sites. See src/lib/fetch for the fetch/parse pipeline that
+// populates ContentItem from a Site.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum SiteFeedType {
+  rss
+  atom
+  html
+  json
+  unknown
+}
+
+enum ContentType {
+  article
+  image
+  gallery
+  video
+  pdf
+  link
+  unknown
+}
+
+enum ViewMode {
+  card
+  grid
+  list
+}
+
+enum Theme {
+  system
+  light
+  dark
+}
+
+model Site {
+  id            String       @id @default(cuid())
+  name          String
+  url           String       @unique
+  domain        String
+  iconUrl       String?
+  description   String?
+  feedUrl       String?
+  feedType      SiteFeedType @default(unknown)
+  viewMode      ViewMode     @default(card)
+  isEnabled     Boolean      @default(true)
+  lastFetchedAt DateTime?
+  lastSuccessAt DateTime?
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  content ContentItem[]
+
+  @@index([domain])
+}
+
+model ContentItem {
+  id            String      @id @default(cuid())
+  site          Site        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  siteId        String
+  type          ContentType @default(article)
+  title         String
+  summary       String?
+  body          String?
+  url           String
+  canonicalUrl  String?
+  thumbnailUrl  String?
+  author        String?
+  publishedAt   DateTime?
+  contentHash   String      @unique
+  guid          String?
+
+  isRead        Boolean     @default(false)
+  isFavorite    Boolean     @default(false)
+  isSaved       Boolean     @default(false)
+  readProgress  Float       @default(0)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  tags          Tag[]            @relation("ContentTags")
+  collections   CollectionItem[]
+  history       HistoryEntry[]
+  media         Media[]
+
+  @@index([siteId])
+  @@index([publishedAt])
+  @@index([isFavorite])
+  @@index([isRead])
+}
+
+model Media {
+  id        String      @id @default(cuid())
+  content   ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  contentId String
+  url       String
+  type      String      @default("image")
+  sortOrder Int         @default(0)
+  alt       String?
+
+  @@index([contentId])
+}
+
+model Tag {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  createdAt DateTime      @default(now())
+  content   ContentItem[] @relation("ContentTags")
+}
+
+model Collection {
+  id          String           @id @default(cuid())
+  name        String
+  description String?
+  icon        String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  items       CollectionItem[]
+}
+
+model CollectionItem {
+  id           String      @id @default(cuid())
+  collection   Collection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  collectionId String
+  content      ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  contentId    String
+  addedAt      DateTime    @default(now())
+
+  @@unique([collectionId, contentId])
+  @@index([contentId])
+}
+
+model HistoryEntry {
+  id        String      @id @default(cuid())
+  content   ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  contentId String
+  viewedAt  DateTime    @default(now())
+  progress  Float       @default(0)
+
+  @@index([contentId])
+  @@index([viewedAt])
+}
+
+model Settings {
+  id              Int      @id @default(1)
+  theme           Theme    @default(system)
+  fontSize        Int      @default(16)
+  defaultViewMode ViewMode @default(card)
+  updatedAt       DateTime @updatedAt
+}

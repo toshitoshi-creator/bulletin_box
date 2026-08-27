@@ -216,52 +216,70 @@ interface ListingCandidate {
   publishedAt: Date | null;
 }
 
+function candidateFromScope(
+  $: CheerioAPI,
+  $scope: ReturnType<CheerioAPI>,
+  $link: ReturnType<CheerioAPI>,
+  baseUrl: string,
+  seen: Set<string>
+): ListingCandidate | null {
+  const href = $link.attr("href");
+  if (!href) return null;
+  const absolute = toAbsoluteUrl(href, baseUrl);
+  if (!absolute) return null;
+  const normalized = normalizeUrl(absolute);
+  if (seen.has(normalized)) return null;
+
+  const heading = $scope.find("h1,h2,h3,h4").first().text().trim();
+  const linkText = $link.text().trim();
+  const title = heading || linkText;
+  if (!title || title.length < 6 || title.length > 200) return null;
+
+  // Skip obvious nav/utility links.
+  if (/^(home|menu|login|sign in|previous|next|top|about|contact)$/i.test(title)) return null;
+
+  const img = $scope.find("img").first();
+  const thumbnailUrl = toAbsoluteUrl(img.attr("src") || img.attr("data-src") || img.attr("data-original"), baseUrl);
+
+  const timeEl = $scope.find("time[datetime]").first();
+  const publishedAt = parseDateLoose(timeEl.attr("datetime") || timeEl.text());
+
+  const summaryText = $scope.find("p").first().text().trim();
+
+  seen.add(normalized);
+  return {
+    title,
+    url: normalized,
+    thumbnailUrl,
+    summary: summaryText ? truncate(summaryText, 300) : null,
+    publishedAt,
+  };
+}
+
 /** Heuristically finds repeated "card" links on an index/listing page: an
  * anchor with meaningful text (and ideally an image) grouped by a shared
- * container, characteristic of blog/news index pages. */
+ * container, characteristic of blog/news index pages. Scans both semantic
+ * <article> wrappers and plain-div/link cards (many sites mix both patterns
+ * on the same page — e.g. a small "featured" section using <article> next
+ * to a main grid built from plain divs — so both are combined, not
+ * either/or, or the second pattern's items are silently dropped). */
 function extractListingCandidates($: CheerioAPI, baseUrl: string): ListingCandidate[] {
   const seen = new Set<string>();
   const candidates: ListingCandidate[] = [];
-
   const $clean = stripNoise($);
-  const scopes = $clean.find("article").length ? $clean.find("article").toArray() : $clean.find("a").toArray();
-  const isArticleScoped = $clean.find("article").length > 0;
 
-  for (const el of scopes) {
-    const $scope = isArticleScoped ? $(el) : $(el).closest("li, div, article").length ? $(el).closest("li, div, article") : $(el);
-    const $link = isArticleScoped ? $scope.find("a[href]").first() : $(el);
+  for (const el of $clean.find("article").toArray()) {
+    const $scope = $(el);
+    const $link = $scope.find("a[href]").first();
+    const candidate = candidateFromScope($, $scope, $link, baseUrl, seen);
+    if (candidate) candidates.push(candidate);
+  }
 
-    const href = $link.attr("href");
-    if (!href) continue;
-    const absolute = toAbsoluteUrl(href, baseUrl);
-    if (!absolute) continue;
-    const normalized = normalizeUrl(absolute);
-    if (seen.has(normalized)) continue;
-
-    const heading = $scope.find("h1,h2,h3,h4").first().text().trim();
-    const linkText = $link.text().trim();
-    const title = heading || linkText;
-    if (!title || title.length < 6 || title.length > 200) continue;
-
-    // Skip obvious nav/utility links.
-    if (/^(home|menu|login|sign in|previous|next|top|about|contact)$/i.test(title)) continue;
-
-    const img = $scope.find("img").first();
-    const thumbnailUrl = toAbsoluteUrl(img.attr("src") || img.attr("data-src") || img.attr("data-original"), baseUrl);
-
-    const timeEl = $scope.find("time[datetime]").first();
-    const publishedAt = parseDateLoose(timeEl.attr("datetime") || timeEl.text());
-
-    const summaryText = $scope.find("p").first().text().trim();
-
-    seen.add(normalized);
-    candidates.push({
-      title,
-      url: normalized,
-      thumbnailUrl,
-      summary: summaryText ? truncate(summaryText, 300) : null,
-      publishedAt,
-    });
+  for (const el of $clean.find("a[href]").toArray()) {
+    const $link = $(el);
+    const $scope = $link.closest("li, div, article").length ? $link.closest("li, div, article") : $link;
+    const candidate = candidateFromScope($, $scope, $link, baseUrl, seen);
+    if (candidate) candidates.push(candidate);
   }
 
   return candidates;

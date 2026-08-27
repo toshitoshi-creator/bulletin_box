@@ -165,6 +165,18 @@ export default function ContentDetailPage() {
 
         <TagEditor item={item} onChange={() => mutate()} />
 
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-5 flex items-center justify-center gap-2 rounded-full bg-accent py-3.5 text-sm font-semibold text-white hover:bg-accent-strong"
+        >
+          <ExternalLinkIcon width={16} height={16} />
+          元サイトで読む
+        </a>
+
+        {item.summary && <p className="mt-5 text-sm leading-relaxed text-ink-muted">{item.summary}</p>}
+
         <div className="mt-6">
           {sanitizedBody ? (
             <div
@@ -172,24 +184,12 @@ export default function ContentDetailPage() {
               style={{ fontSize: `${fontSize}px` }}
               dangerouslySetInnerHTML={{ __html: sanitizedBody }}
             />
-          ) : (
+          ) : !item.summary ? (
             <div className="rounded-2xl border border-border bg-surface-alt p-5 text-center">
-              <p className="text-sm text-ink-muted">
-                {item.summary || "本文を取得できませんでした。元サイトでご覧ください。"}
-              </p>
+              <p className="text-sm text-ink-muted">本文を取得できませんでした。上の「元サイトで読む」からご覧ください。</p>
             </div>
-          )}
+          ) : null}
         </div>
-
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-8 flex items-center justify-center gap-2 rounded-full border border-border py-3 text-sm font-medium text-ink hover:bg-surface-alt"
-        >
-          <ExternalLinkIcon width={16} height={16} />
-          元サイトで開く
-        </a>
 
         <RelatedFromSite siteId={item.site.id} excludeId={item.id} />
       </article>

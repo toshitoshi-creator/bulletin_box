@@ -41,8 +41,10 @@ const REMOVE_SELECTORS = [
   '[class*="splide" i]',
   '[id*="slider" i]',
   '[id*="carousel" i]',
-  '[class*="header" i]',
-  '[id*="header" i]',
+  '[class*="post-header" i]',
+  '[class*="entry-header" i]',
+  '[class*="article-header" i]',
+  '[class*="page-header" i]',
   '[class*="breadcrumb" i]',
 ];
 

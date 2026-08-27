@@ -18,7 +18,30 @@ const REMOVE_SELECTORS = [
   '[class*="advert" i]',
   '[class*="banner" i]',
   '[id*="advert" i]',
+  '[class*="sidebar" i]',
+  '[id*="sidebar" i]',
+  '[class*="widget" i]',
+  '[class*="related" i]',
+  '[class*="recommend" i]',
+  '[class*="promo" i]',
+  '[class*="sponsor" i]',
+  '[class*="newsletter" i]',
+  '[class*="subscribe" i]',
+  '[class*="social" i]',
+  '[class*="share" i]',
+  '[class*="comment" i]',
+  '[class*="popup" i]',
+  '[class*="modal" i]',
+  '[class*="cookie" i]',
 ];
+
+/** Returns a clone of the document with nav/sidebar/ad/widget noise stripped,
+ * so neither the article body nor the listing-page link scan pick it up. */
+function stripNoise($: CheerioAPI) {
+  const $clean = $.root().clone();
+  REMOVE_SELECTORS.forEach((sel) => $clean.find(sel).remove());
+  return $clean;
+}
 
 interface JsonLdArticle {
   headline?: string;
@@ -121,8 +144,7 @@ export function extractArticle($: CheerioAPI, pageUrl: string): ArticleExtractio
       $("time[datetime]").first().attr("datetime")
   );
 
-  const $body = $.root().clone();
-  REMOVE_SELECTORS.forEach((sel) => $body.find(sel).remove());
+  const $body = stripNoise($);
 
   const container = $body.find("article").first().length
     ? $body.find("article").first()
@@ -188,8 +210,9 @@ function extractListingCandidates($: CheerioAPI, baseUrl: string): ListingCandid
   const seen = new Set<string>();
   const candidates: ListingCandidate[] = [];
 
-  const scopes = $("article").length ? $("article").toArray() : $("a").toArray();
-  const isArticleScoped = $("article").length > 0;
+  const $clean = stripNoise($);
+  const scopes = $clean.find("article").length ? $clean.find("article").toArray() : $clean.find("a").toArray();
+  const isArticleScoped = $clean.find("article").length > 0;
 
   for (const el of scopes) {
     const $scope = isArticleScoped ? $(el) : $(el).closest("li, div, article").length ? $(el).closest("li, div, article") : $(el);

@@ -41,6 +41,9 @@ const REMOVE_SELECTORS = [
   '[class*="splide" i]',
   '[id*="slider" i]',
   '[id*="carousel" i]',
+  '[class*="header" i]',
+  '[id*="header" i]',
+  '[class*="breadcrumb" i]',
 ];
 
 /** Returns a clone of the document with nav/sidebar/ad/widget noise stripped,

@@ -27,11 +27,19 @@ const parser = new Parser<CustomFeed, CustomItem>({
   },
 });
 
-function firstImageFromHtml(html: string | undefined, base: string): string | null {
-  if (!html) return null;
+function imagesFromHtml(html: string | undefined, base: string): string[] {
+  if (!html) return [];
   const $ = cheerio.load(html);
-  const src = $("img").first().attr("src");
-  return toAbsoluteUrl(src, base);
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  $("img").each((_, el) => {
+    const abs = toAbsoluteUrl($(el).attr("src"), base);
+    if (abs && !seen.has(abs)) {
+      seen.add(abs);
+      urls.push(abs);
+    }
+  });
+  return urls;
 }
 
 export async function fetchAndParseRss(feedUrl: string): Promise<ExtractionResult> {
@@ -63,6 +71,8 @@ export async function fetchAndParseRss(feedUrl: string): Promise<ExtractionResul
     const bodyHtml = raw["content:encoded"] || raw.content || raw.contentSnippet || "";
     const summary = raw.contentSnippet || truncate(stripHtml(bodyHtml), 300);
 
+    const bodyImages = imagesFromHtml(bodyHtml, finalUrl);
+
     let thumbnail: string | null = null;
     if (raw.enclosure?.url && (raw.enclosure.type ?? "").startsWith("image")) {
       thumbnail = toAbsoluteUrl(raw.enclosure.url, finalUrl);
@@ -75,8 +85,10 @@ export async function fetchAndParseRss(feedUrl: string): Promise<ExtractionResul
       thumbnail = toAbsoluteUrl(mc?.$?.url, finalUrl);
     }
     if (!thumbnail) {
-      thumbnail = firstImageFromHtml(bodyHtml, finalUrl);
+      thumbnail = bodyImages[0] ?? null;
     }
+
+    const media = thumbnail && !bodyImages.includes(thumbnail) ? [thumbnail, ...bodyImages] : bodyImages;
 
     const publishedAt = parseDateLoose(raw.isoDate || raw.pubDate);
     const author = raw.creator || raw["dc:creator"] || null;
@@ -87,6 +99,7 @@ export async function fetchAndParseRss(feedUrl: string): Promise<ExtractionResul
       summary: summary || null,
       body: bodyHtml || null,
       thumbnailUrl: thumbnail,
+      media,
       author: author ? String(author).trim() : null,
       publishedAt,
       guid: raw.guid || link,

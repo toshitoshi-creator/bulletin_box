@@ -13,12 +13,14 @@ import { LoadingState, ErrorState } from "@/components/ui/States";
 import { Button } from "@/components/ui/Button";
 import { ContentActionSheet } from "@/components/content/ContentActionSheet";
 import { ImageLightbox } from "@/components/content/ImageLightbox";
+import { PhotoSlideshow } from "@/components/content/PhotoSlideshow";
 import { TagEditor } from "@/components/content/TagEditor";
 import { RelatedFromSite } from "@/components/content/RelatedFromSite";
 import {
   ArrowLeftIcon,
   ExternalLinkIcon,
   HeartIcon,
+  ImageIcon,
   MoreHorizontalIcon,
 } from "@/components/icons";
 
@@ -34,6 +36,7 @@ export default function ContentDetailPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [slideshowOpen, setSlideshowOpen] = useState(false);
   const viewedRef = useRef(false);
   const progressRef = useRef(0);
   const savedProgressRef = useRef(0);
@@ -92,6 +95,11 @@ export default function ContentDetailPage() {
 
   const sanitizedBody = useMemo(() => (item?.body ? sanitizeArticleHtml(item.body) : null), [item]);
   const fontSize = settingsData?.settings.fontSize ?? 17;
+  const photos = useMemo(() => {
+    if (!item) return [];
+    if (item.media.length > 0) return item.media.map((m) => m.url);
+    return item.thumbnailUrl ? [item.thumbnailUrl] : [];
+  }, [item]);
 
   if (error) {
     return (
@@ -165,15 +173,30 @@ export default function ContentDetailPage() {
 
         <TagEditor item={item} onChange={() => mutate()} />
 
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-5 flex items-center justify-center gap-2 rounded-full bg-accent py-3.5 text-sm font-semibold text-white hover:bg-accent-strong"
-        >
-          <ExternalLinkIcon width={16} height={16} />
-          元サイトで読む
-        </a>
+        <div className="mt-5 flex flex-col gap-2">
+          {photos.length > 0 && (
+            <button
+              onClick={() => setSlideshowOpen(true)}
+              className="flex items-center justify-center gap-2 rounded-full bg-accent py-3.5 text-sm font-semibold text-white hover:bg-accent-strong"
+            >
+              <ImageIcon width={16} height={16} />
+              写真で読む{photos.length > 1 ? `（${photos.length}枚）` : ""}
+            </button>
+          )}
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={
+              photos.length > 0
+                ? "flex items-center justify-center gap-2 rounded-full border border-border py-3.5 text-sm font-medium text-ink hover:bg-surface-alt"
+                : "flex items-center justify-center gap-2 rounded-full bg-accent py-3.5 text-sm font-semibold text-white hover:bg-accent-strong"
+            }
+          >
+            <ExternalLinkIcon width={16} height={16} />
+            元サイトで読む
+          </a>
+        </div>
 
         {item.summary && <p className="mt-5 text-sm leading-relaxed text-ink-muted">{item.summary}</p>}
 
@@ -196,6 +219,7 @@ export default function ContentDetailPage() {
 
       <ContentActionSheet item={item} open={sheetOpen} onClose={() => setSheetOpen(false)} />
       {lightboxSrc && <ImageLightbox src={lightboxSrc} alt={item.title} onClose={() => setLightboxSrc(null)} />}
+      {slideshowOpen && <PhotoSlideshow images={photos} onClose={() => setSlideshowOpen(false)} />}
     </div>
   );
 }

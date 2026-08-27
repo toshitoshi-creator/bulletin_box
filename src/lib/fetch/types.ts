@@ -15,6 +15,8 @@ export interface ExtractedItem {
   summary?: string | null;
   body?: string | null;
   thumbnailUrl?: string | null;
+  /** All images found within the article body, in document order (may include the thumbnail). */
+  media?: string[];
   author?: string | null;
   publishedAt?: Date | null;
   guid?: string | null;

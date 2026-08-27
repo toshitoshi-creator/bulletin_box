@@ -33,6 +33,7 @@ async function saveExtractionResult(siteId: string, extraction: ExtractionResult
     if (!isValidItem(item)) continue;
     const hash = contentHash([siteId, item.guid || item.url, item.title]);
     try {
+      const mediaData = (item.media ?? []).map((url, i) => ({ url, type: "image", sortOrder: i }));
       await prisma.contentItem.upsert({
         where: { contentHash: hash },
         update: {
@@ -42,6 +43,7 @@ async function saveExtractionResult(siteId: string, extraction: ExtractionResult
           thumbnailUrl: item.thumbnailUrl ?? null,
           author: item.author ?? null,
           publishedAt: item.publishedAt ?? null,
+          media: { deleteMany: {}, create: mediaData },
         },
         create: {
           siteId,
@@ -56,6 +58,7 @@ async function saveExtractionResult(siteId: string, extraction: ExtractionResult
           publishedAt: item.publishedAt ?? null,
           contentHash: hash,
           guid: item.guid ?? null,
+          media: { create: mediaData },
         },
       });
       saved++;

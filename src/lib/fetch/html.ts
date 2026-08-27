@@ -73,8 +73,23 @@ interface ArticleExtraction {
   body: string;
   summary: string;
   thumbnailUrl: string | null;
+  media: string[];
   author: string | null;
   publishedAt: Date | null;
+}
+
+function imagesFromContainer($: CheerioAPI, container: ReturnType<CheerioAPI>, pageUrl: string): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  container.find("img").each((_, el) => {
+    const src = $(el).attr("src") || $(el).attr("data-src") || $(el).attr("data-original");
+    const abs = toAbsoluteUrl(src, pageUrl);
+    if (abs && !seen.has(abs)) {
+      seen.add(abs);
+      urls.push(abs);
+    }
+  });
+  return urls;
 }
 
 /** Extracts a single article's fields from an already-loaded page, preferring
@@ -109,17 +124,21 @@ export function extractArticle($: CheerioAPI, pageUrl: string): ArticleExtractio
   const $body = $.root().clone();
   REMOVE_SELECTORS.forEach((sel) => $body.find(sel).remove());
 
+  const container = $body.find("article").first().length
+    ? $body.find("article").first()
+    : $body.find("main").first().length
+      ? $body.find("main").first()
+      : $body.find("body");
+
   let bodyHtml = "";
   if (jsonLd?.articleBody) {
     bodyHtml = jsonLd.articleBody;
   } else {
-    const container = $body.find("article").first().length
-      ? $body.find("article").first()
-      : $body.find("main").first().length
-        ? $body.find("main").first()
-        : $body.find("body");
     bodyHtml = container.html() ?? "";
   }
+
+  const bodyImages = imagesFromContainer($, container, pageUrl);
+  const media = thumbnailUrl && !bodyImages.includes(thumbnailUrl) ? [thumbnailUrl, ...bodyImages] : bodyImages;
 
   const plainText = stripHtml(bodyHtml);
   const ogDescription = $('meta[property="og:description"]').attr("content")?.trim();
@@ -130,6 +149,7 @@ export function extractArticle($: CheerioAPI, pageUrl: string): ArticleExtractio
     body: bodyHtml || plainText,
     summary,
     thumbnailUrl,
+    media,
     author,
     publishedAt,
   };
@@ -145,6 +165,7 @@ export async function extractSinglePage(url: string): Promise<ExtractedItem> {
     summary: article.summary || null,
     body: article.body || null,
     thumbnailUrl: article.thumbnailUrl,
+    media: article.media,
     author: article.author,
     publishedAt: article.publishedAt,
     guid: normalizeUrl(finalUrl),
@@ -239,6 +260,7 @@ export async function fetchAndParseHtml(pageUrl: string): Promise<ExtractionResu
           summary: article.summary || null,
           body: article.body || null,
           thumbnailUrl: article.thumbnailUrl,
+          media: article.media,
           author: article.author,
           publishedAt: article.publishedAt,
           guid: normalizeUrl(finalUrl),
@@ -279,6 +301,7 @@ export async function fetchAndParseHtml(pageUrl: string): Promise<ExtractionResu
         summary: toEnrich[i].summary,
         body: null,
         thumbnailUrl: toEnrich[i].thumbnailUrl,
+        media: toEnrich[i].thumbnailUrl ? [toEnrich[i].thumbnailUrl as string] : [],
         author: null,
         publishedAt: toEnrich[i].publishedAt,
         guid: toEnrich[i].url,
@@ -294,6 +317,7 @@ export async function fetchAndParseHtml(pageUrl: string): Promise<ExtractionResu
       summary: candidate.summary,
       body: null,
       thumbnailUrl: candidate.thumbnailUrl,
+      media: candidate.thumbnailUrl ? [candidate.thumbnailUrl] : [],
       author: null,
       publishedAt: candidate.publishedAt,
       guid: candidate.url,

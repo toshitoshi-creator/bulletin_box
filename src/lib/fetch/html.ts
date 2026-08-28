@@ -18,6 +18,7 @@ const REMOVE_SELECTORS = [
   '[class*="advert" i]',
   '[class*="banner" i]',
   '[id*="advert" i]',
+  '[id*="banner" i]',
   '[class*="sidebar" i]',
   '[id*="sidebar" i]',
   '[class*="widget" i]',

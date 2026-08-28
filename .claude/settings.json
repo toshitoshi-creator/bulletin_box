@@ -13,7 +13,8 @@
     "sharp-edges@trailofbits": true,
     "variant-analysis@trailofbits": true,
     "property-based-testing@trailofbits": true,
-    "fp-check@trailofbits": true
+    "fp-check@trailofbits": true,
+    "waza-health@waza": true
   },
   "extraKnownMarketplaces": {
     "claude-plugins-official": {
@@ -32,6 +33,12 @@
       "source": {
         "source": "github",
         "repo": "trailofbits/skills"
+      }
+    },
+    "waza": {
+      "source": {
+        "source": "github",
+        "repo": "tw93/claude-health"
       }
     }
   }

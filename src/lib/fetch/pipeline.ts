@@ -2,8 +2,18 @@ import { prisma } from "@/lib/db";
 import { discoverSite } from "./discovery";
 import { fetchAndParseRss } from "./rss";
 import { fetchAndParseHtml } from "./html";
-import { normalizeUrl, contentHash, assertValidHttpUrl } from "./normalize";
+import { normalizeUrl, contentHash, assertValidHttpUrl, toAbsoluteUrl } from "./normalize";
 import type { ExtractionResult, ExtractedItem } from "./types";
+
+/** Safety net for image URLs that reach us still relative (a lazy-load
+ * attribute our extractor didn't recognize, a base-URL edge case, etc.):
+ * resolve against the site's own URL so a genuinely relative path still
+ * ends up absolute rather than being silently broken. Already-absolute
+ * URLs pass through unchanged. */
+function resolveAgainstSite(url: string | null | undefined, siteBaseUrl: string): string | null {
+  if (!url) return null;
+  return toAbsoluteUrl(url, siteBaseUrl);
+}
 
 export class SiteRegistrationError extends Error {}
 
@@ -27,20 +37,28 @@ function isValidItem(item: ExtractedItem): boolean {
 
 /** Upserts extracted items as ContentItems, deduped by a stable content hash.
  * Invalid items (empty title / bad URL) are skipped rather than failing the batch. */
-async function saveExtractionResult(siteId: string, extraction: ExtractionResult): Promise<number> {
+async function saveExtractionResult(
+  siteId: string,
+  siteBaseUrl: string,
+  extraction: ExtractionResult
+): Promise<number> {
   let saved = 0;
   for (const item of extraction.items) {
     if (!isValidItem(item)) continue;
     const hash = contentHash([siteId, item.guid || item.url, item.title]);
+    const thumbnailUrl = resolveAgainstSite(item.thumbnailUrl, siteBaseUrl);
+    const mediaData = (item.media ?? [])
+      .map((url) => resolveAgainstSite(url, siteBaseUrl))
+      .filter((url): url is string => url !== null)
+      .map((url, i) => ({ url, type: "image", sortOrder: i }));
     try {
-      const mediaData = (item.media ?? []).map((url, i) => ({ url, type: "image", sortOrder: i }));
       await prisma.contentItem.upsert({
         where: { contentHash: hash },
         update: {
           title: item.title,
           summary: item.summary ?? null,
           body: item.body ?? null,
-          thumbnailUrl: item.thumbnailUrl ?? null,
+          thumbnailUrl,
           author: item.author ?? null,
           publishedAt: item.publishedAt ?? null,
           media: { deleteMany: {}, create: mediaData },
@@ -53,7 +71,7 @@ async function saveExtractionResult(siteId: string, extraction: ExtractionResult
           body: item.body ?? null,
           url: item.url,
           canonicalUrl: item.url,
-          thumbnailUrl: item.thumbnailUrl ?? null,
+          thumbnailUrl,
           author: item.author ?? null,
           publishedAt: item.publishedAt ?? null,
           contentHash: hash,
@@ -90,7 +108,7 @@ export async function refreshSite(siteId: string): Promise<FetchRunResult> {
     return { siteId: site.id, itemCount: 0, warnings: [], errors: [message] };
   }
 
-  const itemCount = await saveExtractionResult(site.id, extraction);
+  const itemCount = await saveExtractionResult(site.id, site.url, extraction);
 
   await prisma.site.update({
     where: { id: site.id },

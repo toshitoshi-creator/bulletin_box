@@ -264,25 +264,61 @@ function candidateFromScope(
   };
 }
 
-// Matches Bootstrap-style grid column classes (col, col-md-4, col-sm-6, ...)
-// as a whole class token — not a bare substring match, so "color" or
-// "collapse" never qualify.
-const GRID_COLUMN_CLASS = /^col(-\w+)*$/i;
+// Below this many candidates from the precise patterns (<article>, repeated
+// siblings), we don't yet trust that we've found the site's real card
+// structure, so the noisier generic-link fallback still runs. At or above
+// it, the precise patterns are doing their job and the generic scan would
+// only add noise (stray sidebar/nav links that happen to have a
+// heading-like label).
+const MIN_PRECISE_CANDIDATES = 3;
+// How many siblings sharing the same class must appear under one parent
+// before we trust it's a real repeated card list (a Bootstrap row>col grid,
+// a plain-div card list, etc.) rather than coincidence.
+const MIN_SIBLING_GROUP = 3;
 
-function hasGridColumnClass($el: ReturnType<CheerioAPI>): boolean {
-  const classAttr = $el.attr("class");
-  if (!classAttr) return false;
-  return classAttr.split(/\s+/).some((token) => GRID_COLUMN_CLASS.test(token));
+/** Finds groups of >=MIN_SIBLING_GROUP sibling elements under the same
+ * parent that share the exact same class attribute — the structural
+ * signature of a repeated card grid, regardless of what the site happens to
+ * name its classes (Bootstrap's col-md-4, a CMS's news-card, anything). A
+ * lone element with a matching class name but no repeated siblings (e.g. an
+ * unrelated one-off link elsewhere on the page) never qualifies. */
+function findSiblingGroupScopes($: CheerioAPI, $clean: ReturnType<CheerioAPI>) {
+  const byParentAndClass = new Map<object, Map<string, object[]>>();
+
+  $clean.find("[class]").each((_, el) => {
+    const parent = (el as { parent?: object | null }).parent;
+    if (!parent) return;
+    const className = $(el).attr("class")?.trim();
+    if (!className) return;
+    let classMap = byParentAndClass.get(parent);
+    if (!classMap) {
+      classMap = new Map();
+      byParentAndClass.set(parent, classMap);
+    }
+    const group = classMap.get(className) ?? [];
+    group.push(el);
+    classMap.set(className, group);
+  });
+
+  const scopes: object[] = [];
+  for (const classMap of byParentAndClass.values()) {
+    for (const siblings of classMap.values()) {
+      if (siblings.length >= MIN_SIBLING_GROUP) scopes.push(...siblings);
+    }
+  }
+  return scopes;
 }
 
 /** Heuristically finds repeated "card" links on an index/listing page: an
  * anchor with meaningful text (and ideally an image) grouped by a shared
  * container, characteristic of blog/news index pages. Scans semantic
- * <article> wrappers, plain-div/link cards, and Bootstrap-style grid
- * columns (class="col-md-4" etc.) and merges all three — real pages often
- * mix patterns (e.g. a small "featured" <article> section next to a main
- * grid built from column divs), so scanning only one pattern silently
- * drops the others' items instead of combining them. */
+ * <article> wrappers and repeated-sibling card grids (Bootstrap row>col,
+ * plain divs, anything — see findSiblingGroupScopes) and merges both, since
+ * real pages often mix patterns (e.g. a small "featured" <article> section
+ * next to a main grid). Only falls back to a generic "any link with a
+ * heading" scan when those precise patterns didn't find enough, since that
+ * scan can't distinguish a real article card from an unrelated link
+ * elsewhere on the page. */
 function extractListingCandidates($: CheerioAPI, baseUrl: string): ListingCandidate[] {
   const seen = new Set<string>();
   const candidates: ListingCandidate[] = [];
@@ -295,13 +331,14 @@ function extractListingCandidates($: CheerioAPI, baseUrl: string): ListingCandid
     if (candidate) candidates.push(candidate);
   }
 
-  for (const el of $clean.find("[class]").toArray()) {
-    const $scope = $(el);
-    if (!hasGridColumnClass($scope)) continue;
-    const $link = $scope.find("a[href]").first();
+  for (const el of findSiblingGroupScopes($, $clean)) {
+    const $scope = $(el as never);
+    const $link = $scope.is("a[href]") ? $scope : $scope.find("a[href]").first();
     const candidate = candidateFromScope($, $scope, $link, baseUrl, seen);
     if (candidate) candidates.push(candidate);
   }
+
+  if (candidates.length >= MIN_PRECISE_CANDIDATES) return candidates;
 
   for (const el of $clean.find("a[href]").toArray()) {
     const $link = $(el);

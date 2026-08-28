@@ -51,7 +51,7 @@ const REMOVE_SELECTORS = [
 
 /** Returns a clone of the document with nav/sidebar/ad/widget noise stripped,
  * so neither the article body nor the listing-page link scan pick it up. */
-function stripNoise($: CheerioAPI) {
+export function stripNoise($: CheerioAPI) {
   const $clean = $.root().clone();
   REMOVE_SELECTORS.forEach((sel) => $clean.find(sel).remove());
   return $clean;
@@ -209,7 +209,7 @@ export async function extractSinglePage(url: string): Promise<ExtractedItem> {
   };
 }
 
-interface ListingCandidate {
+export interface ListingCandidate {
   title: string;
   url: string;
   thumbnailUrl: string | null;
@@ -282,7 +282,7 @@ const MIN_SIBLING_GROUP = 3;
  * name its classes (Bootstrap's col-md-4, a CMS's news-card, anything). A
  * lone element with a matching class name but no repeated siblings (e.g. an
  * unrelated one-off link elsewhere on the page) never qualifies. */
-function findSiblingGroupScopes($: CheerioAPI, $clean: ReturnType<CheerioAPI>) {
+export function findSiblingGroupScopes($: CheerioAPI, $clean: ReturnType<CheerioAPI>) {
   const byParentAndClass = new Map<object, Map<string, object[]>>();
 
   $clean.find("[class]").each((_, el) => {
@@ -319,7 +319,7 @@ function findSiblingGroupScopes($: CheerioAPI, $clean: ReturnType<CheerioAPI>) {
  * heading" scan when those precise patterns didn't find enough, since that
  * scan can't distinguish a real article card from an unrelated link
  * elsewhere on the page. */
-function extractListingCandidates($: CheerioAPI, baseUrl: string): ListingCandidate[] {
+export function extractListingCandidates($: CheerioAPI, baseUrl: string): ListingCandidate[] {
   const seen = new Set<string>();
   const candidates: ListingCandidate[] = [];
   const $clean = stripNoise($);

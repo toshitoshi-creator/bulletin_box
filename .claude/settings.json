@@ -3,7 +3,17 @@
     "superpowers@claude-plugins-official": true,
     "document-skills@anthropic-agent-skills": true,
     "example-skills@anthropic-agent-skills": true,
-    "claude-api@anthropic-agent-skills": true
+    "claude-api@anthropic-agent-skills": true,
+    "differential-review@trailofbits": true,
+    "insecure-defaults@trailofbits": true,
+    "supply-chain-risk-auditor@trailofbits": true,
+    "static-analysis@trailofbits": true,
+    "semgrep-rule-creator@trailofbits": true,
+    "audit-context-building@trailofbits": true,
+    "sharp-edges@trailofbits": true,
+    "variant-analysis@trailofbits": true,
+    "property-based-testing@trailofbits": true,
+    "fp-check@trailofbits": true
   },
   "extraKnownMarketplaces": {
     "claude-plugins-official": {
@@ -16,6 +26,12 @@
       "source": {
         "source": "github",
         "repo": "anthropics/skills"
+      }
+    },
+    "trailofbits": {
+      "source": {
+        "source": "github",
+        "repo": "trailofbits/skills"
       }
     }
   }

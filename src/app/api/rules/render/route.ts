@@ -9,9 +9,12 @@ import { assertValidHttpUrl, normalizeUrl } from "@/lib/fetch/normalize";
  * needed) to highlight hovered elements and compute selectors on click.
  *
  * All scripts, inline event handlers, javascript: URIs, and any CSP/refresh
- * meta tags are stripped so nothing from the target site can execute in our
- * origin — this route only ever renders passively, it never runs the
- * source site's own code.
+ * meta tags are stripped as a first layer of defense. The real backstop is
+ * the Content-Security-Policy response header below (script-src 'none'):
+ * unlike the iframe's sandbox attribute, a real CSP header applies from
+ * byte one with no document-order race, and — unlike our own regex
+ * stripping — it's enforced by the browser engine itself, so it still
+ * holds even against markup our regex fails to catch.
  */
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get("url");
@@ -55,6 +58,9 @@ export async function GET(req: NextRequest) {
   }
 
   return new NextResponse(sanitized, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": "script-src 'none'; object-src 'none';",
+    },
   });
 }

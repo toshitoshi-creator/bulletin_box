@@ -121,7 +121,15 @@ export function PickerFrame({ src, enabled, scopeEl, persistentSelector, onFrame
       src={src}
       title="ページプレビュー"
       className="h-full w-full border-0 bg-white"
-      sandbox="allow-same-origin"
+      // allow-scripts is required for Safari/WebKit to treat this frame as
+      // an interactive scripting realm at all: without it, WebKit doesn't
+      // reliably dispatch touch-driven click events to listeners the
+      // parent attaches onto contentDocument (this is fine in Chromium,
+      // which is why it only shows up on iPhone). The proxy response's
+      // `Content-Security-Policy: script-src 'none'` header is the actual
+      // thing preventing any script from running — allow-scripts alone
+      // does not re-enable script execution against that policy.
+      sandbox="allow-same-origin allow-scripts"
     />
   );
 }

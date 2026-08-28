@@ -234,10 +234,17 @@ function candidateFromScope(
   const heading = $scope.find("h1,h2,h3,h4").first().text().trim();
   const linkText = $link.text().trim();
   const title = heading || linkText;
-  if (!title || title.length < 6 || title.length > 200) return null;
+  // CJK text carries far more meaning per character than space-separated Latin
+  // words, so a short Japanese/Chinese headline can be well under 6 characters.
+  if (!title || title.length < 3 || title.length > 200) return null;
 
-  // Skip obvious nav/utility links.
-  if (/^(home|menu|login|sign in|previous|next|top|about|contact)$/i.test(title)) return null;
+  // Skip obvious nav/utility links (English and common Japanese/Chinese labels).
+  if (
+    /^(home|menu|login|sign in|previous|next|top|about|contact)$/i.test(title) ||
+    /^(ホーム|メニュー|検索|ログイン|次へ|前へ|一覧|トップ|もっと見る|お問い合わせ|首頁|選單|登入|下一頁|上一頁|更多)$/.test(title)
+  ) {
+    return null;
+  }
 
   const img = $scope.find("img").first();
   const thumbnailUrl = toAbsoluteUrl(img.attr("src") || img.attr("data-src") || img.attr("data-original"), baseUrl);
@@ -257,13 +264,25 @@ function candidateFromScope(
   };
 }
 
+// Matches Bootstrap-style grid column classes (col, col-md-4, col-sm-6, ...)
+// as a whole class token — not a bare substring match, so "color" or
+// "collapse" never qualify.
+const GRID_COLUMN_CLASS = /^col(-\w+)*$/i;
+
+function hasGridColumnClass($el: ReturnType<CheerioAPI>): boolean {
+  const classAttr = $el.attr("class");
+  if (!classAttr) return false;
+  return classAttr.split(/\s+/).some((token) => GRID_COLUMN_CLASS.test(token));
+}
+
 /** Heuristically finds repeated "card" links on an index/listing page: an
  * anchor with meaningful text (and ideally an image) grouped by a shared
- * container, characteristic of blog/news index pages. Scans both semantic
- * <article> wrappers and plain-div/link cards (many sites mix both patterns
- * on the same page — e.g. a small "featured" section using <article> next
- * to a main grid built from plain divs — so both are combined, not
- * either/or, or the second pattern's items are silently dropped). */
+ * container, characteristic of blog/news index pages. Scans semantic
+ * <article> wrappers, plain-div/link cards, and Bootstrap-style grid
+ * columns (class="col-md-4" etc.) and merges all three — real pages often
+ * mix patterns (e.g. a small "featured" <article> section next to a main
+ * grid built from column divs), so scanning only one pattern silently
+ * drops the others' items instead of combining them. */
 function extractListingCandidates($: CheerioAPI, baseUrl: string): ListingCandidate[] {
   const seen = new Set<string>();
   const candidates: ListingCandidate[] = [];
@@ -271,6 +290,14 @@ function extractListingCandidates($: CheerioAPI, baseUrl: string): ListingCandid
 
   for (const el of $clean.find("article").toArray()) {
     const $scope = $(el);
+    const $link = $scope.find("a[href]").first();
+    const candidate = candidateFromScope($, $scope, $link, baseUrl, seen);
+    if (candidate) candidates.push(candidate);
+  }
+
+  for (const el of $clean.find("[class]").toArray()) {
+    const $scope = $(el);
+    if (!hasGridColumnClass($scope)) continue;
     const $link = $scope.find("a[href]").first();
     const candidate = candidateFromScope($, $scope, $link, baseUrl, seen);
     if (candidate) candidates.push(candidate);

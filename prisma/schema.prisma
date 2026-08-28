@@ -61,8 +61,32 @@ model Site {
   updatedAt     DateTime     @updatedAt
 
   content ContentItem[]
+  rule    SiteRule?
 
   @@index([domain])
+}
+
+/// User-authored extraction rule for a site, built via the visual Rule
+/// Editor (tap an element -> selector). When present and enabled, this
+/// takes priority over the automatic RSS/HTML discovery heuristics.
+/// `index` and `detail` are JSON blobs shaped like:
+///   index:  { itemSelector: string,
+///             title:{selector,attr}, link:{selector,attr},
+///             thumbnail:{selector,attr}?, date:{selector,attr}?,
+///             summary:{selector,attr}? }
+///   detail: { title:{selector,attr}?, body:{selector,attr}?,
+///             thumbnail:{selector,attr}?, author:{selector,attr}?,
+///             date:{selector,attr}? } | null
+model SiteRule {
+  id        String   @id @default(cuid())
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  siteId    String   @unique
+  listUrl   String
+  index     Json
+  detail    Json?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model ContentItem {

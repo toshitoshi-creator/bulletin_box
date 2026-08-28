@@ -8,6 +8,13 @@ import type {
   SiteDTO,
   TagDTO,
 } from "./api-types";
+import type {
+  DetailRule,
+  IndexRule,
+  PreviewDetailFields,
+  PreviewIndexItem,
+  SiteRuleDTO,
+} from "./rule-editor/types";
 
 export class ApiRequestError extends Error {}
 
@@ -50,6 +57,27 @@ export const api = {
     refresh: (id: string) =>
       request<{ itemCount: number; warnings: string[]; errors: string[] }>(`/api/sites/${id}/refresh`, {
         method: "POST",
+      }),
+  },
+  rule: {
+    get: (siteId: string) => request<{ rule: SiteRuleDTO }>(`/api/sites/${siteId}/rule`),
+    save: (siteId: string, data: { listUrl: string; index: IndexRule; detail?: DetailRule | null }) =>
+      request<{ rule: SiteRuleDTO; itemCount: number; warnings: string[]; errors: string[] }>(
+        `/api/sites/${siteId}/rule`,
+        { method: "POST", body: JSON.stringify(data) }
+      ),
+    remove: (siteId: string) => request<{ ok: true }>(`/api/sites/${siteId}/rule`, { method: "DELETE" }),
+  },
+  rulePreview: {
+    index: (listUrl: string, index: IndexRule) =>
+      request<{ items: PreviewIndexItem[]; count: number; error?: string }>("/api/rules/preview", {
+        method: "POST",
+        body: JSON.stringify({ mode: "index", listUrl, index }),
+      }),
+    detail: (detailUrl: string, detail: DetailRule) =>
+      request<{ fields: PreviewDetailFields }>("/api/rules/preview", {
+        method: "POST",
+        body: JSON.stringify({ mode: "detail", detailUrl, detail }),
       }),
   },
   content: {

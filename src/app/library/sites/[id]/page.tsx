@@ -14,7 +14,15 @@ import { ContentFeed } from "@/components/content/ContentFeed";
 import { ViewModeToggle } from "@/components/content/ViewModeToggle";
 import type { CardVariant } from "@/components/content/ContentCard";
 import { formatRelative } from "@/lib/format";
-import { ArrowLeftIcon, AlertIcon, ExternalLinkIcon, GlobeIcon, RefreshIcon, TrashIcon } from "@/components/icons";
+import {
+  ArrowLeftIcon,
+  AlertIcon,
+  ExternalLinkIcon,
+  GlobeIcon,
+  RefreshIcon,
+  SettingsIcon,
+  TrashIcon,
+} from "@/components/icons";
 
 type SubTab = "all" | "unread" | "image" | "video" | "favorite";
 
@@ -122,6 +130,10 @@ export default function SiteDetailPage() {
               サイトを開く
             </Button>
           </a>
+          <Button variant="secondary" size="sm" onClick={() => router.push(`/library/sites/${id}/rule`)}>
+            <SettingsIcon width={14} height={14} />
+            抽出ルールを編集
+          </Button>
           <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
             <TrashIcon width={14} height={14} />
             削除

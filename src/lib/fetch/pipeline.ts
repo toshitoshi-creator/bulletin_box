@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { discoverSite } from "./discovery";
 import { fetchAndParseRss } from "./rss";
 import { fetchAndParseHtml } from "./html";
+import { fetchWithRule, type DetailRule, type IndexRule } from "./rule";
 import { normalizeUrl, contentHash, assertValidHttpUrl, toAbsoluteUrl } from "./normalize";
 import type { ExtractionResult, ExtractedItem } from "./types";
 
@@ -45,7 +46,12 @@ async function saveExtractionResult(
   let saved = 0;
   for (const item of extraction.items) {
     if (!isValidItem(item)) continue;
-    const hash = contentHash([siteId, item.guid || item.url, item.title]);
+    // Identity is siteId + guid/url only: title/body/etc. are mutable fields
+    // that the update clause below refreshes on every refetch. Including
+    // title here would make a changed title (auto-detection vs. a saved
+    // rule producing different text for the same URL) miss the existing
+    // row and insert a duplicate instead of updating it.
+    const hash = contentHash([siteId, item.guid || item.url]);
     const thumbnailUrl = resolveAgainstSite(item.thumbnailUrl, siteBaseUrl);
     const mediaData = (item.media ?? [])
       .map((url) => resolveAgainstSite(url, siteBaseUrl))
@@ -91,14 +97,22 @@ async function saveExtractionResult(
  * Never throws for fetch/parse failures — records lastError on the Site instead so
  * the UI can show a clear, recoverable error and the caller can retry. */
 export async function refreshSite(siteId: string): Promise<FetchRunResult> {
-  const site = await prisma.site.findUniqueOrThrow({ where: { id: siteId } });
+  const site = await prisma.site.findUniqueOrThrow({ where: { id: siteId }, include: { rule: true } });
   const now = new Date();
 
   let extraction: ExtractionResult;
   try {
-    extraction = site.feedUrl
-      ? await fetchAndParseRss(site.feedUrl)
-      : await fetchAndParseHtml(site.url);
+    // A saved user rule always wins over automatic RSS/HTML discovery.
+    extraction =
+      site.rule && site.rule.enabled
+        ? await fetchWithRule(
+            site.rule.listUrl,
+            site.rule.index as unknown as IndexRule,
+            site.rule.detail as unknown as DetailRule | null
+          )
+        : site.feedUrl
+          ? await fetchAndParseRss(site.feedUrl)
+          : await fetchAndParseHtml(site.url);
   } catch (err) {
     const message = err instanceof Error ? err.message : "取得に失敗しました。";
     await prisma.site.update({

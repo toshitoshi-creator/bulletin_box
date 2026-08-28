@@ -4,6 +4,48 @@ export const registerSiteSchema = z.object({
   url: z.string().trim().min(1, "URLを入力してください。"),
 });
 
+const fieldSelectorSchema = z.object({
+  selector: z.string(),
+  attr: z.string().min(1),
+});
+
+export const indexRuleSchema = z.object({
+  itemSelector: z.string().min(1, "一覧の項目セレクタが必要です。"),
+  title: fieldSelectorSchema,
+  link: fieldSelectorSchema,
+  thumbnail: fieldSelectorSchema.nullable().optional(),
+  date: fieldSelectorSchema.nullable().optional(),
+  summary: fieldSelectorSchema.nullable().optional(),
+});
+
+export const detailRuleSchema = z.object({
+  title: fieldSelectorSchema.nullable().optional(),
+  body: fieldSelectorSchema.nullable().optional(),
+  thumbnail: fieldSelectorSchema.nullable().optional(),
+  author: fieldSelectorSchema.nullable().optional(),
+  date: fieldSelectorSchema.nullable().optional(),
+});
+
+export const saveSiteRuleSchema = z.object({
+  listUrl: z.string().min(1),
+  index: indexRuleSchema,
+  detail: detailRuleSchema.nullable().optional(),
+});
+
+export const previewIndexRuleSchema = z.object({
+  mode: z.literal("index"),
+  listUrl: z.string().min(1, "一覧ページのURLが必要です。"),
+  index: indexRuleSchema,
+});
+
+export const previewDetailRuleSchema = z.object({
+  mode: z.literal("detail"),
+  detailUrl: z.string().min(1, "記事ページのURLが必要です。"),
+  detail: detailRuleSchema,
+});
+
+export const previewRuleSchema = z.union([previewIndexRuleSchema, previewDetailRuleSchema]);
+
 export const updateSiteSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(1000).nullable().optional(),

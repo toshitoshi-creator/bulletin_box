@@ -117,6 +117,11 @@ export default function RuleEditorPage() {
   const [previewItems, setPreviewItems] = useState<PreviewIndexItem[] | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewSkipped, setPreviewSkipped] = useState<{
+    scopedCount: number;
+    missingFieldCount: number;
+    duplicateCount: number;
+  } | null>(null);
 
   const [detailUrlInput, setDetailUrlInput] = useState("");
   const [detailFields, setDetailFields] = useState<Partial<Record<DetailFieldDef["key"], FieldSelector>>>({});
@@ -290,12 +295,20 @@ export default function RuleEditorPage() {
     setPreviewLoading(true);
     setPreviewError(null);
     setPreviewItems(null);
+    setPreviewSkipped(null);
     try {
       const res = await api.rulePreview.index(listUrlInput.trim(), rule);
       if (res.error) {
         setPreviewError(res.error);
       } else {
         setPreviewItems(res.items);
+        if (res.missingFieldCount > 0 || res.duplicateCount > 0) {
+          setPreviewSkipped({
+            scopedCount: res.scopedCount,
+            missingFieldCount: res.missingFieldCount,
+            duplicateCount: res.duplicateCount,
+          });
+        }
       }
     } catch (err) {
       setPreviewError(err instanceof ApiRequestError ? err.message : "プレビューに失敗しました。");
@@ -399,10 +412,9 @@ export default function RuleEditorPage() {
     setSaving(true);
     try {
       const res = await api.rule.save(id, { listUrl: listUrlInput.trim(), index, detail });
-      toast.show(
-        res.itemCount > 0 ? `ルールを保存しました（${res.itemCount}件取得）` : "ルールを保存しました",
-        res.errors.length > 0 ? "error" : "success"
-      );
+      const base = res.itemCount > 0 ? `ルールを保存しました（${res.itemCount}件取得）` : "ルールを保存しました";
+      const message = res.warnings.length > 0 ? `${base}。${res.warnings[0]}` : base;
+      toast.show(message, res.errors.length > 0 || res.warnings.length > 0 ? "error" : "success");
       mutate();
       router.push(`/library/sites/${id}`);
     } catch (err) {
@@ -581,6 +593,7 @@ export default function RuleEditorPage() {
               loading={previewLoading}
               error={previewError}
               items={previewItems}
+              skipped={previewSkipped}
               onRetry={() => runIndexPreview()}
               onBack={() => {
                 setIndexFieldStep(0);
@@ -797,6 +810,7 @@ function IndexPreviewPanel({
   loading,
   error,
   items,
+  skipped,
   onRetry,
   onBack,
   onNext,
@@ -804,6 +818,7 @@ function IndexPreviewPanel({
   loading: boolean;
   error: string | null;
   items: PreviewIndexItem[] | null;
+  skipped: { scopedCount: number; missingFieldCount: number; duplicateCount: number } | null;
   onRetry: () => void;
   onBack: () => void;
   onNext: () => void;
@@ -821,6 +836,24 @@ function IndexPreviewPanel({
         <div className="flex items-start gap-2 rounded-xl bg-danger-soft px-3 py-2.5 text-xs text-danger">
           <AlertIcon width={14} height={14} className="mt-0.5 shrink-0" />
           {error}
+        </div>
+      )}
+      {items && skipped && (
+        <div className="flex items-start gap-2 rounded-xl bg-danger-soft px-3 py-2.5 text-xs text-danger">
+          <AlertIcon width={14} height={14} className="mt-0.5 shrink-0" />
+          <div>
+            <p>
+              一覧の項目は{skipped.scopedCount}件ありましたが、{items.length}件しか取得できませんでした。
+            </p>
+            <p className="mt-0.5">
+              {skipped.missingFieldCount > 0 &&
+                `タイトルまたはリンクが見つからない項目: ${skipped.missingFieldCount}件　`}
+              {skipped.duplicateCount > 0 && `リンクが重複している項目: ${skipped.duplicateCount}件`}
+            </p>
+            <p className="mt-0.5">
+              一部のカードだけ形が違う可能性があります。「戻る」からタイトル/リンクの選び方を見直してください。
+            </p>
+          </div>
         </div>
       )}
       {items && (

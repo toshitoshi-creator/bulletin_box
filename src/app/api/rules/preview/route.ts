@@ -21,11 +21,17 @@ export async function POST(req: NextRequest) {
       assertValidHttpUrl(listUrl);
       const { text, finalUrl } = await safeFetchText(listUrl);
       try {
-        const items = applyIndexRule(text, finalUrl, data.index);
-        return NextResponse.json({ items: items.slice(0, 50), count: items.length });
+        const { items, scopedCount, missingFieldCount, duplicateCount } = applyIndexRule(text, finalUrl, data.index);
+        return NextResponse.json({
+          items: items.slice(0, 50),
+          count: items.length,
+          scopedCount,
+          missingFieldCount,
+          duplicateCount,
+        });
       } catch (err) {
         if (err instanceof RuleApplyError) {
-          return NextResponse.json({ items: [], count: 0, error: err.message });
+          return NextResponse.json({ items: [], count: 0, scopedCount: 0, missingFieldCount: 0, duplicateCount: 0, error: err.message });
         }
         throw err;
       }

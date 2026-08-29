@@ -42,9 +42,28 @@ function readField($: CheerioAPI, $scope: ReturnType<CheerioAPI>, field: FieldSe
 
 export class RuleApplyError extends Error {}
 
+export interface IndexRuleResult {
+  items: ExtractedItem[];
+  /** How many elements itemSelector matched on the page, before any were
+   * dropped below — the number a "get everything that matches" check
+   * should compare items.length against. */
+  scopedCount: number;
+  /** Matched a scope element, but the title or link selector didn't
+   * resolve within it (e.g. a promoted/sponsored card whose markup
+   * differs from the regular ones the rule was built from). */
+  missingFieldCount: number;
+  /** Resolved to a URL another item already claimed (e.g. the link
+   * selector accidentally points at a "read more"/share link shared by
+   * several cards instead of each card's own permalink). */
+  duplicateCount: number;
+}
+
 /** Applies a saved IndexRule to a fetched listing page's HTML, returning the
- * same ExtractedItem[] shape the automatic parsers produce. */
-export function applyIndexRule(html: string, baseUrl: string, rule: IndexRule): ExtractedItem[] {
+ * same ExtractedItem[] shape the automatic parsers produce, plus counts of
+ * how many matched scope elements were skipped and why — so a rule that
+ * only generalizes to *some* of the page's cards can be diagnosed instead
+ * of silently returning fewer items than the user expects. */
+export function applyIndexRule(html: string, baseUrl: string, rule: IndexRule): IndexRuleResult {
   const $ = cheerio.load(html);
   const scopes = $(rule.itemSelector).toArray();
   if (scopes.length === 0) {
@@ -53,17 +72,28 @@ export function applyIndexRule(html: string, baseUrl: string, rule: IndexRule): 
 
   const items: ExtractedItem[] = [];
   const seen = new Set<string>();
+  let missingFieldCount = 0;
+  let duplicateCount = 0;
 
   for (const el of scopes) {
     const $scope = $(el);
     const title = readField($, $scope, rule.title);
     const hrefRaw = readField($, $scope, rule.link);
-    if (!title || !hrefRaw) continue;
+    if (!title || !hrefRaw) {
+      missingFieldCount++;
+      continue;
+    }
 
     const absolute = toAbsoluteUrl(hrefRaw, baseUrl);
-    if (!absolute) continue;
+    if (!absolute) {
+      missingFieldCount++;
+      continue;
+    }
     const url = normalizeUrl(absolute);
-    if (seen.has(url)) continue;
+    if (seen.has(url)) {
+      duplicateCount++;
+      continue;
+    }
     seen.add(url);
 
     const thumbRaw = readField($, $scope, rule.thumbnail);
@@ -83,7 +113,7 @@ export function applyIndexRule(html: string, baseUrl: string, rule: IndexRule): 
     });
   }
 
-  return items;
+  return { items, scopedCount: scopes.length, missingFieldCount, duplicateCount };
 }
 
 /** Applies a saved DetailRule to a fetched article page's HTML. Any field
@@ -147,10 +177,17 @@ export async function fetchWithRule(
   const errors: string[] = [];
 
   const { text, finalUrl } = await safeFetchText(listUrl);
-  const items = applyIndexRule(text, finalUrl, index);
+  const { items, scopedCount, missingFieldCount, duplicateCount } = applyIndexRule(text, finalUrl, index);
 
   if (items.length === 0) {
     warnings.push("一覧ルールに一致する記事が見つかりませんでした。");
+  } else if (missingFieldCount > 0 || duplicateCount > 0) {
+    const reasons: string[] = [];
+    if (missingFieldCount > 0) reasons.push(`タイトルまたはリンクが見つからない項目: ${missingFieldCount}件`);
+    if (duplicateCount > 0) reasons.push(`リンクが他の項目と重複: ${duplicateCount}件`);
+    warnings.push(
+      `一覧の項目は${scopedCount}件見つかりましたが、${items.length}件のみ取得できました（${reasons.join("、")}）。一部の項目だけ形が違う可能性があります。`
+    );
   }
 
   if (detail && Object.values(detail).some((f) => f?.selector?.trim())) {

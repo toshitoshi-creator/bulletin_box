@@ -3,7 +3,12 @@ import { previewRuleSchema } from "@/lib/validation";
 import { handleApiError } from "@/lib/api-response";
 import { safeFetchText } from "@/lib/fetch/safeFetch";
 import { normalizeUrl, assertValidHttpUrl } from "@/lib/fetch/normalize";
-import { applyIndexRule, applyDetailRule, RuleApplyError } from "@/lib/fetch/rule";
+import { applyDetailRule, fetchAllPages, RuleApplyError } from "@/lib/fetch/rule";
+
+/** Preview follows pagination too (so the user can confirm the next-page
+ * link actually works) but at a much smaller cap than the real fetch, to
+ * keep the interactive wizard responsive. */
+const PREVIEW_MAX_PAGES = 3;
 
 /**
  * Live "what would actually be extracted" preview for the Rule Editor
@@ -19,19 +24,31 @@ export async function POST(req: NextRequest) {
     if (data.mode === "index") {
       const listUrl = normalizeUrl(data.listUrl);
       assertValidHttpUrl(listUrl);
-      const { text, finalUrl } = await safeFetchText(listUrl);
       try {
-        const { items, scopedCount, missingFieldCount, duplicateCount } = applyIndexRule(text, finalUrl, data.index);
+        const { items, scopedCount, missingFieldCount, duplicateCount, pagesFetched } = await fetchAllPages(
+          listUrl,
+          data.index,
+          PREVIEW_MAX_PAGES
+        );
         return NextResponse.json({
           items: items.slice(0, 50),
           count: items.length,
           scopedCount,
           missingFieldCount,
           duplicateCount,
+          pagesFetched,
         });
       } catch (err) {
         if (err instanceof RuleApplyError) {
-          return NextResponse.json({ items: [], count: 0, scopedCount: 0, missingFieldCount: 0, duplicateCount: 0, error: err.message });
+          return NextResponse.json({
+            items: [],
+            count: 0,
+            scopedCount: 0,
+            missingFieldCount: 0,
+            duplicateCount: 0,
+            pagesFetched: 0,
+            error: err.message,
+          });
         }
         throw err;
       }

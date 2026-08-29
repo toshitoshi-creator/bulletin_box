@@ -18,6 +18,10 @@ export interface IndexRule {
   thumbnail?: FieldSelector | null;
   date?: FieldSelector | null;
   summary?: FieldSelector | null;
+  /** Selector for a "next page" link on the list page itself (not scoped to
+   * an item). When set, fetchWithRule follows it and repeats extraction,
+   * merging items across pages, up to a safety cap. */
+  nextPage?: FieldSelector | null;
 }
 
 export interface DetailRule {
@@ -56,6 +60,10 @@ export interface IndexRuleResult {
    * selector accidentally points at a "read more"/share link shared by
    * several cards instead of each card's own permalink). */
   duplicateCount: number;
+  /** Absolute URL of the next list page, if rule.nextPage is set and
+   * resolved on this page. Null when unset, not found (last page), or
+   * pointing back at the current page. */
+  nextPageUrl: string | null;
 }
 
 /** Applies a saved IndexRule to a fetched listing page's HTML, returning the
@@ -113,7 +121,17 @@ export function applyIndexRule(html: string, baseUrl: string, rule: IndexRule): 
     });
   }
 
-  return { items, scopedCount: scopes.length, missingFieldCount, duplicateCount };
+  let nextPageUrl: string | null = null;
+  if (rule.nextPage && rule.nextPage.selector.trim()) {
+    const nextRaw = readField($, $.root(), rule.nextPage);
+    const nextAbsolute = toAbsoluteUrl(nextRaw, baseUrl);
+    if (nextAbsolute) {
+      const normalized = normalizeUrl(nextAbsolute);
+      if (normalized !== normalizeUrl(baseUrl)) nextPageUrl = normalized;
+    }
+  }
+
+  return { items, scopedCount: scopes.length, missingFieldCount, duplicateCount, nextPageUrl };
 }
 
 /** Applies a saved DetailRule to a fetched article page's HTML. Any field
@@ -164,20 +182,80 @@ export function applyDetailRule(
   };
 }
 
-/** Fetches the list page and applies the index rule; if a detail rule is
- * also configured, fetches each item's own page too and merges in its
- * fields (partial-success: one item's detail fetch failing doesn't drop
- * it, it just keeps the index-page-only fields). */
+/** Follows a rule's list page across pagination (when index.nextPage is
+ * set), merging items and diagnostics from each page. Partial-success: a
+ * page beyond the first that fails to fetch, or whose itemSelector no
+ * longer matches (a natural "that was the last page" signal on some
+ * sites), just stops pagination rather than failing the whole run — only
+ * the very first page throws, since a totally broken rule on page 1 means
+ * there's nothing worth returning. */
+export async function fetchAllPages(
+  listUrl: string,
+  index: IndexRule,
+  maxPages: number
+): Promise<{
+  items: ExtractedItem[];
+  scopedCount: number;
+  missingFieldCount: number;
+  duplicateCount: number;
+  pagesFetched: number;
+}> {
+  const items: ExtractedItem[] = [];
+  const seenItemUrls = new Set<string>();
+  const seenPageUrls = new Set<string>();
+  let scopedCount = 0;
+  let missingFieldCount = 0;
+  let duplicateCount = 0;
+  let pagesFetched = 0;
+
+  let currentUrl: string | null = listUrl;
+  while (currentUrl && pagesFetched < maxPages && !seenPageUrls.has(currentUrl)) {
+    seenPageUrls.add(currentUrl);
+
+    let pageResult: IndexRuleResult;
+    try {
+      const { text, finalUrl } = await safeFetchText(currentUrl);
+      pageResult = applyIndexRule(text, finalUrl, index);
+    } catch (err) {
+      if (pagesFetched === 0) throw err;
+      break;
+    }
+
+    pagesFetched++;
+    scopedCount += pageResult.scopedCount;
+    missingFieldCount += pageResult.missingFieldCount;
+    duplicateCount += pageResult.duplicateCount;
+    for (const item of pageResult.items) {
+      if (seenItemUrls.has(item.url)) continue;
+      seenItemUrls.add(item.url);
+      items.push(item);
+    }
+
+    currentUrl = index.nextPage ? pageResult.nextPageUrl : null;
+  }
+
+  return { items, scopedCount, missingFieldCount, duplicateCount, pagesFetched };
+}
+
+/** Fetches the list page (following pagination when configured) and
+ * applies the index rule; if a detail rule is also configured, fetches
+ * each item's own page too and merges in its fields (partial-success: one
+ * item's detail fetch failing doesn't drop it, it just keeps the
+ * index-page-only fields). */
 export async function fetchWithRule(
   listUrl: string,
   index: IndexRule,
-  detail: DetailRule | null | undefined
+  detail: DetailRule | null | undefined,
+  options?: { maxPages?: number }
 ): Promise<ExtractionResult> {
   const warnings: string[] = [];
   const errors: string[] = [];
 
-  const { text, finalUrl } = await safeFetchText(listUrl);
-  const { items, scopedCount, missingFieldCount, duplicateCount } = applyIndexRule(text, finalUrl, index);
+  const { items, scopedCount, missingFieldCount, duplicateCount, pagesFetched } = await fetchAllPages(
+    listUrl,
+    index,
+    options?.maxPages ?? 20
+  );
 
   if (items.length === 0) {
     warnings.push("一覧ルールに一致する記事が見つかりませんでした。");
@@ -185,8 +263,9 @@ export async function fetchWithRule(
     const reasons: string[] = [];
     if (missingFieldCount > 0) reasons.push(`タイトルまたはリンクが見つからない項目: ${missingFieldCount}件`);
     if (duplicateCount > 0) reasons.push(`リンクが他の項目と重複: ${duplicateCount}件`);
+    const pageNote = pagesFetched > 1 ? `（${pagesFetched}ページ分）` : "";
     warnings.push(
-      `一覧の項目は${scopedCount}件見つかりましたが、${items.length}件のみ取得できました（${reasons.join("、")}）。一部の項目だけ形が違う可能性があります。`
+      `一覧の項目は${scopedCount}件見つかりましたが${pageNote}、${items.length}件のみ取得できました（${reasons.join("、")}）。一部の項目だけ形が違う可能性があります。`
     );
   }
 

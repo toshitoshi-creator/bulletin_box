@@ -18,6 +18,7 @@ type Step =
   | "list-url"
   | "pick-item"
   | "pick-index-fields"
+  | "pick-next-page"
   | "index-preview"
   | "detail-choice"
   | "detail-url"
@@ -57,7 +58,7 @@ const DETAIL_FIELDS: DetailFieldDef[] = [
 ];
 
 function defaultAttr(fieldKey: string, el: Element): Attr {
-  if (fieldKey === "link") return "href";
+  if (fieldKey === "link" || fieldKey === "nextPage") return "href";
   if (fieldKey === "thumbnail") return "src";
   if (el.tagName === "IMG") return "src";
   return "text";
@@ -65,14 +66,15 @@ function defaultAttr(fieldKey: string, el: Element): Attr {
 
 /** A tap rarely lands on the exact <a>/<img> that carries the attribute a
  * field needs (e.g. tapping the title text nested inside the card's link).
- * For the link/thumbnail fields, walk to the nearest element that actually
- * has the attribute, staying within `scope` so the result is still usable
- * as a selector relative to it. */
+ * For the link/thumbnail/nextPage fields, walk to the nearest element that
+ * actually has the attribute, staying within `scope` so the result is
+ * still usable as a selector relative to it (`scope` is null for
+ * page-level picks like nextPage, which aren't relative to anything). */
 function resolvePickTarget(fieldKey: string, el: Element, scope: Element | null): Element {
   const within = (candidate: Element | null) =>
     candidate !== null && (!scope || candidate === scope || scope.contains(candidate));
 
-  if (fieldKey === "link") {
+  if (fieldKey === "link" || fieldKey === "nextPage") {
     if (el.hasAttribute("href")) return el;
     const anchor = el.closest("a[href]");
     if (within(anchor)) return anchor as Element;
@@ -112,6 +114,7 @@ export default function RuleEditorPage() {
 
   const [indexFields, setIndexFields] = useState<Partial<Record<IndexFieldDef["key"], FieldSelector>>>({});
   const [indexFieldStep, setIndexFieldStep] = useState(0);
+  const [nextPageField, setNextPageField] = useState<FieldSelector | null>(null);
   const [pendingPick, setPendingPick] = useState<{ el: Element; attr: Attr } | null>(null);
 
   const [previewItems, setPreviewItems] = useState<PreviewIndexItem[] | null>(null);
@@ -122,6 +125,7 @@ export default function RuleEditorPage() {
     missingFieldCount: number;
     duplicateCount: number;
   } | null>(null);
+  const [previewPages, setPreviewPages] = useState<number | null>(null);
 
   const [detailUrlInput, setDetailUrlInput] = useState("");
   const [detailFields, setDetailFields] = useState<Partial<Record<DetailFieldDef["key"], FieldSelector>>>({});
@@ -153,6 +157,7 @@ export default function RuleEditorPage() {
           date: res.rule.index.date ?? undefined,
           summary: res.rule.index.summary ?? undefined,
         });
+        setNextPageField(res.rule.index.nextPage ?? null);
         if (res.rule.detail) {
           setDetailFields({
             title: res.rule.detail.title ?? undefined,
@@ -184,6 +189,7 @@ export default function RuleEditorPage() {
     scopeElRef.current = null;
     setIndexFields({});
     setIndexFieldStep(0);
+    setNextPageField(null);
     setPendingPick(null);
     setRenderSrc(`/api/rules/render?url=${encodeURIComponent(url)}`);
     setStep("pick-item");
@@ -251,27 +257,49 @@ export default function RuleEditorPage() {
     const updated = { ...indexFields, [currentIndexField.key]: { selector: relSelector, attr: pendingPick.attr } };
     setIndexFields(updated);
     setPendingPick(null);
-    advanceIndexField(updated);
+    advanceIndexField();
   }
 
   function skipIndexField() {
     setPendingPick(null);
-    advanceIndexField(indexFields);
+    advanceIndexField();
   }
 
-  // Takes the just-updated field map explicitly rather than reading
-  // `indexFields` from the closure: when this runs right after the last
-  // field's setIndexFields() call (same synchronous handler), React hasn't
-  // re-rendered yet, so the closure would still see the pre-update value.
-  function advanceIndexField(fields: Partial<Record<IndexFieldDef["key"], FieldSelector>>) {
+  function advanceIndexField() {
     if (indexFieldStep < INDEX_FIELDS.length - 1) {
       setIndexFieldStep((s) => s + 1);
     } else {
-      runIndexPreview(fields);
+      // The next-page step reads `indexFields` itself once the user acts on
+      // it, by which point the setIndexFields() from the last field confirm
+      // has already committed — no stale-closure risk here.
+      setStep("pick-next-page");
     }
   }
 
-  function buildIndexRule(fields: Partial<Record<IndexFieldDef["key"], FieldSelector>> = indexFields): IndexRule | null {
+  function handleNextPagePick(rawEl: Element) {
+    const el = resolvePickTarget("nextPage", rawEl, null);
+    setPendingPick({ el, attr: defaultAttr("nextPage", el) });
+  }
+
+  function confirmNextPage() {
+    if (!pendingPick || !frameDoc) return;
+    const selector = computeSelector(pendingPick.el, frameDoc.body);
+    const field: FieldSelector = { selector, attr: pendingPick.attr };
+    setNextPageField(field);
+    setPendingPick(null);
+    runIndexPreview(indexFields, field);
+  }
+
+  function skipNextPage() {
+    setPendingPick(null);
+    setNextPageField(null);
+    runIndexPreview(indexFields, null);
+  }
+
+  function buildIndexRule(
+    fields: Partial<Record<IndexFieldDef["key"], FieldSelector>> = indexFields,
+    nextPage: FieldSelector | null = nextPageField
+  ): IndexRule | null {
     const title = fields.title;
     const link = fields.link;
     if (!title || !link) return null;
@@ -282,11 +310,15 @@ export default function RuleEditorPage() {
       thumbnail: fields.thumbnail ?? null,
       date: fields.date ?? null,
       summary: fields.summary ?? null,
+      nextPage: nextPage ?? null,
     };
   }
 
-  async function runIndexPreview(fields: Partial<Record<IndexFieldDef["key"], FieldSelector>> = indexFields) {
-    const rule = buildIndexRule(fields);
+  async function runIndexPreview(
+    fields: Partial<Record<IndexFieldDef["key"], FieldSelector>> = indexFields,
+    nextPage: FieldSelector | null = nextPageField
+  ) {
+    const rule = buildIndexRule(fields, nextPage);
     if (!rule) {
       toast.show("タイトルとリンクは必須です。", "error");
       return;
@@ -296,12 +328,14 @@ export default function RuleEditorPage() {
     setPreviewError(null);
     setPreviewItems(null);
     setPreviewSkipped(null);
+    setPreviewPages(null);
     try {
       const res = await api.rulePreview.index(listUrlInput.trim(), rule);
       if (res.error) {
         setPreviewError(res.error);
       } else {
         setPreviewItems(res.items);
+        setPreviewPages(res.pagesFetched);
         if (res.missingFieldCount > 0 || res.duplicateCount > 0) {
           setPreviewSkipped({
             scopedCount: res.scopedCount,
@@ -443,6 +477,7 @@ export default function RuleEditorPage() {
       "list-url",
       "pick-item",
       "pick-index-fields",
+      "pick-next-page",
       "index-preview",
       "detail-choice",
       "detail-url",
@@ -465,7 +500,7 @@ export default function RuleEditorPage() {
         </Button>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-ink">抽出ルール編集 — {site.name}</p>
-          <p className="text-xs text-ink-faint">ステップ {Math.max(stepIndex, 0) + 1} / 8</p>
+          <p className="text-xs text-ink-faint">ステップ {Math.max(stepIndex, 0) + 1} / 9</p>
         </div>
         {itemSelector && step !== "list-url" && (
           <Button variant="ghost" size="sm" onClick={removeRule} disabled={saving}>
@@ -588,12 +623,54 @@ export default function RuleEditorPage() {
             </div>
           )}
 
+          {step === "pick-next-page" && (
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-ink">③ 次のページへのリンク（任意）</p>
+              <p className="text-xs text-ink-muted">
+                一覧に「次へ」や「2」のようなページ送りのリンクがあれば、それをタップしてください。複数ページにまたがる記事も自動でまとめて取得します。ない場合はスキップしてください。
+              </p>
+
+              {pendingPick && (
+                <PendingPickCard
+                  pick={pendingPick}
+                  onAttrChange={(attr) => setPendingPick({ ...pendingPick, attr })}
+                  onWiden={() => widenPendingPick("nextPage", null)}
+                />
+              )}
+
+              {!pendingPick && nextPageField && (
+                <div className="rounded-xl bg-accent-soft px-3 py-2.5 text-xs text-accent-strong">
+                  <p className="font-medium">設定済み</p>
+                  <p className="mt-1 break-all font-mono text-[11px] opacity-80">{nextPageField.selector}</p>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                {pendingPick ? (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => setPendingPick(null)}>
+                      選び直す
+                    </Button>
+                    <Button variant="primary" size="sm" onClick={confirmNextPage}>
+                      決定してプレビューへ
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={skipNextPage}>
+                    {nextPageField ? "設定を外してプレビューへ" : "スキップ（ページ送りなし）"}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
           {step === "index-preview" && (
             <IndexPreviewPanel
               loading={previewLoading}
               error={previewError}
               items={previewItems}
               skipped={previewSkipped}
+              pagesFetched={previewPages}
               onRetry={() => runIndexPreview()}
               onBack={() => {
                 setIndexFieldStep(0);
@@ -644,7 +721,7 @@ export default function RuleEditorPage() {
 
           {step === "pick-detail-fields" && (
             <div className="space-y-3">
-              <p className="text-sm font-medium text-ink">③ {currentDetailField.label}</p>
+              <p className="text-sm font-medium text-ink">④ {currentDetailField.label}</p>
               <p className="text-xs text-ink-muted">{currentDetailField.hint}</p>
               <p className="text-xs text-ink-faint">
                 {detailFieldStep + 1} / {DETAIL_FIELDS.length}
@@ -734,7 +811,10 @@ export default function RuleEditorPage() {
             <PickerFrame
               src={renderSrc}
               enabled={
-                step === "pick-item" || step === "pick-index-fields" || step === "pick-detail-fields"
+                step === "pick-item" ||
+                step === "pick-index-fields" ||
+                step === "pick-next-page" ||
+                step === "pick-detail-fields"
               }
               scopeEl={
                 step === "pick-index-fields"
@@ -750,9 +830,11 @@ export default function RuleEditorPage() {
                   ? handleItemPick
                   : step === "pick-index-fields"
                     ? handleIndexFieldPick
-                    : step === "pick-detail-fields"
-                      ? handleDetailFieldPick
-                      : undefined
+                    : step === "pick-next-page"
+                      ? handleNextPagePick
+                      : step === "pick-detail-fields"
+                        ? handleDetailFieldPick
+                        : undefined
               }
             />
           ) : (
@@ -811,6 +893,7 @@ function IndexPreviewPanel({
   error,
   items,
   skipped,
+  pagesFetched,
   onRetry,
   onBack,
   onNext,
@@ -819,6 +902,7 @@ function IndexPreviewPanel({
   error: string | null;
   items: PreviewIndexItem[] | null;
   skipped: { scopedCount: number; missingFieldCount: number; duplicateCount: number } | null;
+  pagesFetched: number | null;
   onRetry: () => void;
   onBack: () => void;
   onNext: () => void;
@@ -858,7 +942,10 @@ function IndexPreviewPanel({
       )}
       {items && (
         <>
-          <p className="text-xs text-ink-muted">{items.length} 件を取得しました</p>
+          <p className="text-xs text-ink-muted">
+            {items.length} 件を取得しました
+            {pagesFetched !== null && pagesFetched > 1 && `（${pagesFetched}ページ分。プレビューは最大3ページまで）`}
+          </p>
           <div className="max-h-[40vh] space-y-2 overflow-y-auto md:max-h-none">
             {items.slice(0, 10).map((item, i) => (
               <div key={i} className="rounded-lg border border-border bg-surface p-2 text-xs">

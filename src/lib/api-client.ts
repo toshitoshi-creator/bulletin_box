@@ -76,6 +76,7 @@ export const api = {
         scopedCount: number;
         missingFieldCount: number;
         duplicateCount: number;
+        pagesFetched: number;
         error?: string;
       }>("/api/rules/preview", {
         method: "POST",

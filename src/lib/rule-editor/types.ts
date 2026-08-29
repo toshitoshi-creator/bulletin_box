@@ -14,6 +14,9 @@ export interface IndexRule {
   thumbnail?: FieldSelector | null;
   date?: FieldSelector | null;
   summary?: FieldSelector | null;
+  /** Selector for a "next page" link on the list page itself, followed to
+   * pull in items from subsequent pages too. */
+  nextPage?: FieldSelector | null;
 }
 
 export interface DetailRule {

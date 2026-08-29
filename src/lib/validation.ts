@@ -16,6 +16,7 @@ export const indexRuleSchema = z.object({
   thumbnail: fieldSelectorSchema.nullable().optional(),
   date: fieldSelectorSchema.nullable().optional(),
   summary: fieldSelectorSchema.nullable().optional(),
+  nextPage: fieldSelectorSchema.nullable().optional(),
 });
 
 export const detailRuleSchema = z.object({

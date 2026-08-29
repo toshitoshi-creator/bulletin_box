@@ -7,7 +7,13 @@ import clsx from "clsx";
 import { api, fetcher, ApiRequestError } from "@/lib/api-client";
 import type { SiteDTO } from "@/lib/api-types";
 import type { DetailRule, FieldSelector, IndexRule, PreviewIndexItem } from "@/lib/rule-editor/types";
-import { computeSelector, computeRelativeSelector, describeElement, matchCount } from "@/lib/rule-editor/selector";
+import {
+  computeSelector,
+  computeRelativeSelector,
+  compoundSelector,
+  describeElement,
+  matchCount,
+} from "@/lib/rule-editor/selector";
 import { PickerFrame } from "@/components/rule-editor/PickerFrame";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -202,14 +208,18 @@ export default function RuleEditorPage() {
   function handleItemPick(el: Element) {
     const doc = el.ownerDocument;
     const selector = computeSelector(el, doc.body);
-    // computeSelector aims for uniqueness; for a repeating card we want the
-    // broadest class-based form of that same element, which naturally
-    // matches all its siblings sharing the same markup.
-    const tag = el.tagName.toLowerCase();
-    const classes = Array.from(el.classList);
-    const broad = classes.length > 0 ? `${tag}.${classes.map((c) => CSS.escape(c)).join(".")}` : selector;
+    // computeSelector aims for uniqueness; for a repeating card we instead
+    // want the broadest class-based form of that same element, which
+    // naturally matches all its siblings sharing the same markup.
+    // compoundSelector() already filters out auto-generated/hash-like
+    // classes (CSS modules, styled-components, etc.) — using it here too
+    // (rather than joining every class on the element unfiltered) means a
+    // per-instance class that varies between otherwise-identical cards
+    // doesn't stop this from generalizing to the rest of them.
+    const broad = compoundSelector(el);
+    const hasStableClass = broad !== el.tagName.toLowerCase();
     const count = matchCount(doc.body, broad);
-    const chosen = count >= 2 ? broad : selector;
+    const chosen = hasStableClass && count >= 2 ? broad : selector;
     setItemSelector(chosen);
     setItemCount(matchCount(doc.body, chosen));
     scopeElRef.current = el;

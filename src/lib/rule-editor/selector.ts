@@ -9,7 +9,13 @@ function isStableClass(cls: string): boolean {
   return true;
 }
 
-function compoundSelector(el: Element): string {
+/** Tag + stable classes only (auto-generated/hash-like classes filtered
+ * out) — exported so callers building a "does this repeat across
+ * siblings" selector use the same stability filtering as the unique-path
+ * selectors below, instead of joining every class on the element
+ * unfiltered (which fails to generalize the moment sibling cards carry
+ * even one differing per-instance class, e.g. a CSS-module hash). */
+export function compoundSelector(el: Element): string {
   const tag = el.tagName.toLowerCase();
   const classes = Array.from(el.classList).filter(isStableClass);
   if (classes.length === 0) return tag;

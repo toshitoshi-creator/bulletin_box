@@ -48,10 +48,9 @@ export default function SiteDetailPage() {
     setRefreshing(true);
     try {
       const result = await api.sites.refresh(id);
-      toast.show(
-        result.itemCount > 0 ? `${result.itemCount}件の新しいコンテンツを取得しました` : "新着はありませんでした",
-        result.errors.length > 0 ? "error" : "success"
-      );
+      const base = result.itemCount > 0 ? `${result.itemCount}件の新しいコンテンツを取得しました` : "新着はありませんでした";
+      const message = result.warnings.length > 0 ? `${base}。${result.warnings[0]}` : base;
+      toast.show(message, result.errors.length > 0 || result.warnings.length > 0 ? "error" : "success");
       mutate();
     } catch (err) {
       toast.show(err instanceof ApiRequestError ? err.message : "更新に失敗しました", "error");

@@ -70,7 +70,14 @@ export const api = {
   },
   rulePreview: {
     index: (listUrl: string, index: IndexRule) =>
-      request<{ items: PreviewIndexItem[]; count: number; error?: string }>("/api/rules/preview", {
+      request<{
+        items: PreviewIndexItem[];
+        count: number;
+        scopedCount: number;
+        missingFieldCount: number;
+        duplicateCount: number;
+        error?: string;
+      }>("/api/rules/preview", {
         method: "POST",
         body: JSON.stringify({ mode: "index", listUrl, index }),
       }),

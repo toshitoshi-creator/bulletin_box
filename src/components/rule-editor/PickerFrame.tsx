@@ -54,6 +54,24 @@ export function PickerFrame({ src, enabled, scopeEl, persistentSelector, onFrame
       if (!doc) return;
       onFrameLoad?.(doc);
 
+      // On iOS Safari a tap on plain text (a title, a date — anything
+      // without a native "clickable" affordance) is easily swallowed by
+      // the default text-selection/callout gesture instead of producing a
+      // click, and `cursor: pointer` — which signals "this is tappable" to
+      // WebKit — was previously only ever applied reactively on hover,
+      // which doesn't fire before a touch tap. Apply both up front, on
+      // every element, the moment the document loads.
+      const style = doc.createElement("style");
+      style.textContent = `
+        * {
+          cursor: pointer !important;
+          -webkit-user-select: none !important;
+          user-select: none !important;
+          -webkit-touch-callout: none !important;
+        }
+      `;
+      (doc.head ?? doc.documentElement).appendChild(style);
+
       function onMouseOver(e: MouseEvent) {
         if (!stateRef.current.enabled) return;
         const target = e.target as HTMLElement;

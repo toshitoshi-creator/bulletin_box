@@ -136,6 +136,25 @@ export function applyIndexRule(html: string, baseUrl: string, rule: IndexRule): 
 
 /** Applies a saved DetailRule to a fetched article page's HTML. Any field
  * left unset falls back to a sane generic default (OpenGraph/heading). */
+/** Collects every image inside `$scope` (checking common lazy-load
+ * attributes too), deduped and resolved to absolute URLs — mirrors
+ * fetch/html.ts's imagesFromContainer so a saved detail rule's photo
+ * slideshow behaves the same as the auto-detected one instead of being
+ * limited to a single thumbnail. */
+function imagesWithin($: CheerioAPI, $scope: ReturnType<CheerioAPI>, baseUrl: string): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  $scope.find("img").each((_, el) => {
+    const src = $(el).attr("src") || $(el).attr("data-src") || $(el).attr("data-original");
+    const abs = toAbsoluteUrl(src, baseUrl);
+    if (abs && !seen.has(abs)) {
+      seen.add(abs);
+      urls.push(abs);
+    }
+  });
+  return urls;
+}
+
 export function applyDetailRule(
   html: string,
   baseUrl: string,
@@ -152,9 +171,13 @@ export function applyDetailRule(
 
   const bodyField = rule?.body;
   let bodyHtml: string | null = null;
+  let bodyImages: string[] = [];
   if (bodyField && bodyField.selector.trim()) {
     const $body = $(bodyField.selector).first();
-    bodyHtml = $body.length ? ($body.html() ?? null) : null;
+    if ($body.length) {
+      bodyHtml = $body.html() ?? null;
+      bodyImages = imagesWithin($, $body, baseUrl);
+    }
   }
 
   const thumbRaw =
@@ -171,6 +194,8 @@ export function applyDetailRule(
   const summary =
     $('meta[property="og:description"]').attr("content")?.trim() || (plainText ? truncate(plainText, 300) : null);
 
+  const media = thumbnailUrl && !bodyImages.includes(thumbnailUrl) ? [thumbnailUrl, ...bodyImages] : bodyImages;
+
   return {
     title,
     body: bodyHtml || plainText || null,
@@ -178,7 +203,7 @@ export function applyDetailRule(
     author,
     publishedAt,
     summary,
-    media: thumbnailUrl ? [thumbnailUrl] : [],
+    media,
   };
 }
 
@@ -277,7 +302,10 @@ export async function fetchWithRule(
         const fields = applyDetailRule(page.text, page.finalUrl, detail);
         item.body = fields.body ?? item.body;
         item.thumbnailUrl = fields.thumbnailUrl ?? item.thumbnailUrl;
-        item.media = fields.thumbnailUrl ? fields.media : item.media;
+        // fields.media can be non-empty from body images alone even when
+        // there's no distinct thumbnail, so replace whenever it found
+        // anything at all — not only when a thumbnail was also found.
+        item.media = fields.media && fields.media.length > 0 ? fields.media : item.media;
         item.author = fields.author ?? item.author;
         item.publishedAt = fields.publishedAt ?? item.publishedAt;
         item.summary = fields.summary ?? item.summary;

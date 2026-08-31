@@ -17,6 +17,11 @@ export interface IndexRule {
   /** Selector for a "next page" link on the list page itself, followed to
    * pull in items from subsequent pages too. */
   nextPage?: FieldSelector | null;
+  /** Alternative to nextPage for sites whose pagination is client-side
+   * JavaScript with no real link to tap (e.g. a Vue/Quasar paginator):
+   * increments a numeric query parameter already present in listUrl
+   * (e.g. ?page=1) instead. */
+  pageParam?: { name: string; maxPages: number } | null;
 }
 
 export interface DetailRule {

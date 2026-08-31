@@ -22,6 +22,13 @@ export interface IndexRule {
    * an item). When set, fetchWithRule follows it and repeats extraction,
    * merging items across pages, up to a safety cap. */
   nextPage?: FieldSelector | null;
+  /** Alternative to nextPage for sites whose pagination is client-side
+   * JavaScript with no real link to follow (e.g. a Vue/Quasar paginator
+   * component): increments a numeric query parameter already present in
+   * listUrl (e.g. ?page=1) instead of reading a link out of the page.
+   * Mutually exclusive with nextPage in practice — if both are set,
+   * pageParam takes priority. */
+  pageParam?: { name: string; maxPages: number } | null;
 }
 
 export interface DetailRule {
@@ -214,6 +221,24 @@ export function applyDetailRule(
  * sites), just stops pagination rather than failing the whole run — only
  * the very first page throws, since a totally broken rule on page 1 means
  * there's nothing worth returning. */
+/** Increments a numeric query parameter already present in `currentUrl`
+ * (e.g. ?page=1 -> ?page=2). Returns null if the parameter is missing or
+ * not a positive integer, since that means there's nothing sane to
+ * increment. Used for sites whose pagination is client-side JavaScript
+ * with no real link for applyIndexRule's nextPage to read out of the
+ * page — see IndexRule.pageParam. */
+function bumpPageParam(currentUrl: string, paramName: string): string | null {
+  try {
+    const url = new URL(currentUrl);
+    const current = Number(url.searchParams.get(paramName));
+    if (!Number.isInteger(current) || current <= 0) return null;
+    url.searchParams.set(paramName, String(current + 1));
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchAllPages(
   listUrl: string,
   index: IndexRule,
@@ -233,8 +258,10 @@ export async function fetchAllPages(
   let duplicateCount = 0;
   let pagesFetched = 0;
 
+  const effectiveMaxPages = index.pageParam ? Math.min(maxPages, index.pageParam.maxPages) : maxPages;
+
   let currentUrl: string | null = listUrl;
-  while (currentUrl && pagesFetched < maxPages && !seenPageUrls.has(currentUrl)) {
+  while (currentUrl && pagesFetched < effectiveMaxPages && !seenPageUrls.has(currentUrl)) {
     seenPageUrls.add(currentUrl);
 
     let pageResult: IndexRuleResult;
@@ -256,7 +283,14 @@ export async function fetchAllPages(
       items.push(item);
     }
 
-    currentUrl = index.nextPage ? pageResult.nextPageUrl : null;
+    if (index.pageParam) {
+      // No page-level "no more pages" signal exists for this mode (the
+      // param can be incremented forever), so an empty page is our own
+      // stopping heuristic: assume we've gone past the last real page.
+      currentUrl = pageResult.items.length > 0 ? bumpPageParam(currentUrl, index.pageParam.name) : null;
+    } else {
+      currentUrl = index.nextPage ? pageResult.nextPageUrl : null;
+    }
   }
 
   return { items, scopedCount, missingFieldCount, duplicateCount, pagesFetched };

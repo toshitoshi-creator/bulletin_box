@@ -9,6 +9,11 @@ const fieldSelectorSchema = z.object({
   attr: z.string().min(1),
 });
 
+const pageParamSchema = z.object({
+  name: z.string().trim().min(1),
+  maxPages: z.number().int().min(1).max(50),
+});
+
 export const indexRuleSchema = z.object({
   itemSelector: z.string().min(1, "一覧の項目セレクタが必要です。"),
   title: fieldSelectorSchema,
@@ -17,6 +22,7 @@ export const indexRuleSchema = z.object({
   date: fieldSelectorSchema.nullable().optional(),
   summary: fieldSelectorSchema.nullable().optional(),
   nextPage: fieldSelectorSchema.nullable().optional(),
+  pageParam: pageParamSchema.nullable().optional(),
 });
 
 export const detailRuleSchema = z.object({

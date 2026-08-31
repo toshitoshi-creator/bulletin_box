@@ -121,6 +121,9 @@ export default function RuleEditorPage() {
   const [indexFields, setIndexFields] = useState<Partial<Record<IndexFieldDef["key"], FieldSelector>>>({});
   const [indexFieldStep, setIndexFieldStep] = useState(0);
   const [nextPageField, setNextPageField] = useState<FieldSelector | null>(null);
+  const [pageParamField, setPageParamField] = useState<{ name: string; maxPages: number } | null>(null);
+  const [pageParamEnabled, setPageParamEnabled] = useState(false);
+  const [pageParamMaxInput, setPageParamMaxInput] = useState(10);
   const [pendingPick, setPendingPick] = useState<{ el: Element; attr: Attr } | null>(null);
 
   const [previewItems, setPreviewItems] = useState<PreviewIndexItem[] | null>(null);
@@ -164,6 +167,11 @@ export default function RuleEditorPage() {
           summary: res.rule.index.summary ?? undefined,
         });
         setNextPageField(res.rule.index.nextPage ?? null);
+        setPageParamField(res.rule.index.pageParam ?? null);
+        if (res.rule.index.pageParam) {
+          setPageParamEnabled(true);
+          setPageParamMaxInput(res.rule.index.pageParam.maxPages);
+        }
         if (res.rule.detail) {
           setDetailFields({
             title: res.rule.detail.title ?? undefined,
@@ -186,6 +194,24 @@ export default function RuleEditorPage() {
   const currentIndexField = INDEX_FIELDS[indexFieldStep];
   const currentDetailField = DETAIL_FIELDS[detailFieldStep];
 
+  // Auto-detects a page-number query param already in the list URL (e.g.
+  // ?page=1), which is what the numeric pagination alternative increments.
+  // Common site conventions only — a site using something unusual still
+  // has the tap-a-link option.
+  const detectedPageParam = useMemo(() => {
+    try {
+      const url = new URL(listUrlInput);
+      const candidates = ["page", "p", "pg", "paged", "pagenum", "page_no", "pageno"];
+      for (const name of candidates) {
+        const value = url.searchParams.get(name);
+        if (value && /^\d+$/.test(value) && Number(value) > 0) return name;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, [listUrlInput]);
+
   const loadListPage = useCallback(() => {
     const url = listUrlInput.trim();
     if (!url) return;
@@ -196,6 +222,8 @@ export default function RuleEditorPage() {
     setIndexFields({});
     setIndexFieldStep(0);
     setNextPageField(null);
+    setPageParamField(null);
+    setPageParamEnabled(false);
     setPendingPick(null);
     setRenderSrc(`/api/rules/render?url=${encodeURIComponent(url)}`);
     setStep("pick-item");
@@ -296,19 +324,34 @@ export default function RuleEditorPage() {
     const selector = computeSelector(pendingPick.el, frameDoc.body);
     const field: FieldSelector = { selector, attr: pendingPick.attr };
     setNextPageField(field);
+    setPageParamField(null);
+    setPageParamEnabled(false);
     setPendingPick(null);
-    runIndexPreview(indexFields, field);
+    runIndexPreview(indexFields, field, null);
   }
 
   function skipNextPage() {
     setPendingPick(null);
     setNextPageField(null);
-    runIndexPreview(indexFields, null);
+    runIndexPreview(indexFields, null, pageParamField);
+  }
+
+  // The numeric "increment the URL's page number" alternative to tapping a
+  // link — for sites whose pagination is client-side JavaScript with no
+  // real link at all (a Vue/Quasar paginator component, for example).
+  function confirmPageParamPagination() {
+    if (!detectedPageParam) return;
+    const config = { name: detectedPageParam, maxPages: pageParamMaxInput };
+    setPageParamField(config);
+    setNextPageField(null);
+    setPendingPick(null);
+    runIndexPreview(indexFields, null, config);
   }
 
   function buildIndexRule(
     fields: Partial<Record<IndexFieldDef["key"], FieldSelector>> = indexFields,
-    nextPage: FieldSelector | null = nextPageField
+    nextPage: FieldSelector | null = nextPageField,
+    pageParam: { name: string; maxPages: number } | null = pageParamField
   ): IndexRule | null {
     const title = fields.title;
     const link = fields.link;
@@ -321,14 +364,16 @@ export default function RuleEditorPage() {
       date: fields.date ?? null,
       summary: fields.summary ?? null,
       nextPage: nextPage ?? null,
+      pageParam: pageParam ?? null,
     };
   }
 
   async function runIndexPreview(
     fields: Partial<Record<IndexFieldDef["key"], FieldSelector>> = indexFields,
-    nextPage: FieldSelector | null = nextPageField
+    nextPage: FieldSelector | null = nextPageField,
+    pageParam: { name: string; maxPages: number } | null = pageParamField
   ) {
-    const rule = buildIndexRule(fields, nextPage);
+    const rule = buildIndexRule(fields, nextPage, pageParam);
     if (!rule) {
       toast.show("タイトルとリンクは必須です。", "error");
       return;
@@ -655,6 +700,15 @@ export default function RuleEditorPage() {
                 </div>
               )}
 
+              {!pendingPick && pageParamField && (
+                <div className="rounded-xl bg-accent-soft px-3 py-2.5 text-xs text-accent-strong">
+                  <p className="font-medium">設定済み（URLページ番号方式）</p>
+                  <p className="mt-1 opacity-80">
+                    {pageParamField.name}= を最大{pageParamField.maxPages}ページまで増やして取得
+                  </p>
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2 pt-1">
                 {pendingPick ? (
                   <>
@@ -667,10 +721,60 @@ export default function RuleEditorPage() {
                   </>
                 ) : (
                   <Button variant="secondary" size="sm" onClick={skipNextPage}>
-                    {nextPageField ? "設定を外してプレビューへ" : "スキップ（ページ送りなし）"}
+                    {nextPageField
+                      ? "リンク設定を外してプレビューへ"
+                      : pageParamField
+                        ? "プレビューへ進む"
+                        : "スキップ（ページ送りなし）"}
                   </Button>
                 )}
               </div>
+
+              {!pendingPick && (
+                <div className="space-y-2 rounded-xl border border-border bg-surface p-3">
+                  <p className="text-xs font-medium text-ink">またはURLのページ番号を自動で増やす</p>
+                  <p className="text-xs text-ink-faint">
+                    リンクが押しても反応しない（サイト内のプログラムで動いている）場合は、こちらの方法を試してください。
+                  </p>
+                  {detectedPageParam ? (
+                    <>
+                      <p className="text-xs text-ink-muted">
+                        URLに「{detectedPageParam}=◯」というページ番号を検出しました。
+                      </p>
+                      <label className="flex items-center gap-2 text-xs text-ink">
+                        <input
+                          type="checkbox"
+                          checked={pageParamEnabled}
+                          onChange={(e) => setPageParamEnabled(e.target.checked)}
+                        />
+                        この番号を自動で増やして複数ページ取得する
+                      </label>
+                      {pageParamEnabled && (
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="flex items-center gap-2 text-xs text-ink">
+                            最大ページ数
+                            <input
+                              type="number"
+                              min={1}
+                              max={50}
+                              value={pageParamMaxInput}
+                              onChange={(e) => setPageParamMaxInput(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                              className="w-16 rounded-lg border border-border bg-surface px-2 py-1 text-xs"
+                            />
+                          </label>
+                          <Button variant="primary" size="sm" onClick={confirmPageParamPagination}>
+                            この設定でプレビューへ
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-ink-faint">
+                      一覧ページのURLに「page=1」のようなページ番号が含まれていないため、この方法は使えません。
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

@@ -26,7 +26,8 @@
     "variant-analysis@trailofbits": true,
     "property-based-testing@trailofbits": true,
     "fp-check@trailofbits": true,
-    "waza-health@waza": true
+    "waza-health@waza": true,
+    "unity@unity-agent-plugin": true
   },
   "extraKnownMarketplaces": {
     "claude-plugins-official": {
@@ -51,6 +52,12 @@
       "source": {
         "source": "github",
         "repo": "tw93/claude-health"
+      }
+    },
+    "unity-agent-plugin": {
+      "source": {
+        "source": "github",
+        "repo": "Unity-Technologies/unity-agent-plugin"
       }
     }
   }
